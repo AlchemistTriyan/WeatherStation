@@ -1,7 +1,7 @@
 
 // PROJECT  : The Weather Station
 // PURPOSE  : To show the temperature on a display and city on a LCD screen. 
-// AUTHOR   : Mr. D’Arcy
+// AUTHOR   : Triyan Khare
 // COURSE   : ICS4U-E
 // DATE     : 2024 01 18
 // MCU      : 328P (Nano)
