@@ -1,4 +1,3 @@
-
 // PROJECT  : The Weather Station
 // PURPOSE  : To show the temperature on a display and city on a LCD screen. 
 // AUTHOR   : Triyan Khare
@@ -7,30 +6,33 @@
 // MCU      : 328P (Nano)
 // STATUS   : Working
 
-#include <WiFi.h>          // WiFi Library 
-#include <HTTPClient.h>    // HTTPClient Library
-#include <ArduinoJson.h>   // ArduinoJson Library
-#include <LiquidCrystal.h> // LCD Library
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <ArduinoJson.h>
+#include <LiquidCrystal.h>
 
 // WiFi credentials
-const char* ssid = "iPhone (176)";     // Connect to my iPhone hotspot 
-const char* password = "triyankhar8";  // Password of my hotspot
+const char* ssid = "iPhone (176)";
+const char* password = "triyankhar8";
 
 // LCD pins
-const int rs = 8, en = 9, d4 = 7, d5 = 6, d6 = 5, d7 = 4; // Define LCD pins 
-LiquidCrystal lcd(rs, en, d4, d5, d6, d7);                // Initialize LCD 
+const int rs = 8, en = 9, d4 = 7, d5 = 6, d6 = 5, d7 = 4;
+LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
 
-#define CLOCK 12 // Define Clock pin
-#define LATCH 11 // Define Latch pin
-#define DATA 10  // Define Data pin 
+// Shift register pins for 7-segment display
+#define CLOCK 12
+#define LATCH 11
+#define DATA 10
 
-const String API_KEY = "43e8a2cad3704be787703257242711"; // API_Key
-const String BASE_URL = "http://api.weatherapi.com/v1/current.json"; // API URL
-String cities[] = {"Toronto", "Washington", "Paris", "Madrid", "London"}; // 5 Cities to get weather temp from 
+// WeatherAPI settings
+const String API_KEY = "43e8a2cad3704be787703257242711";
+const String BASE_URL = "http://api.weatherapi.com/v1/current.json";
+String cities[] = {"Toronto", "Washington", "Paris", "Madrid", "London"};
 String currentCity = "";      // Current city name
 float currentTemperature = 0; // Current temperature
 
-int digits[10][7] = { // Array for common cathode 7-segment display (QA-QG)
+// Digit patterns for common cathode 7-segment display (QA-QG)
+int digits[10][7] = { 
   {1, 1, 1, 1, 1, 1, 0}, // digit 0
   {0, 1, 1, 0, 0, 0, 0}, // digit 1
   {1, 1, 0, 1, 1, 0, 1}, // digit 2
@@ -43,123 +45,153 @@ int digits[10][7] = { // Array for common cathode 7-segment display (QA-QG)
   {1, 1, 1, 1, 0, 1, 1}  // digit 9
 };
 
-#define CHANGECITY 3 // Define pin that toggles the cities
-#define CHANGETEMP 4 // Define pin that changes the temp 
+// Button and debounce settings
+#define CHANGECITY 3
+#define CHANGETEMP 4
 
-const int debounceDelay = 50;       // Debounce time in milliseconds
-int cityIndex = 0;                  // To keep track of the current city
-unsigned long lastDebounceTime = 0; // Time of the last button press
-bool lastButtonState = LOW;         // Last state of the button
-bool buttonState = LOW;             // Current state of the button
+const int debounceDelay = 50; // Debounce time in milliseconds
+int cityIndex = 0;            // To keep track of the current city
+unsigned long lastDebounceTimeCity = 0; // Time of the last city button press
+unsigned long lastDebounceTimeTemp = 0; // Time of the last temp button press
+bool lastCityButtonState = HIGH;   // Last state of the city button
+bool lastTempButtonState = HIGH;   // Last state of the temp button
 
 void setup() {
   Serial.begin(9600); // Start Serial Monitor
   
-  lcd.begin(16, 2);             // Initialize LCD with 16 columns and 2 rows
-  lcd.print("Initializing..."); // Print “initializing”
+  // Initialize LCD
+  lcd.begin(16, 2); // 16 columns, 2 rows
+  lcd.print("Initializing...");
   
-  WiFi.begin(ssid, password);               // Connect to Wi-Fi
-  Serial.println("Connecting to Wi-Fi..."); // Print “Connecting to Wi-Fi”
-  while (WiFi.status() != WL_CONNECTED) {   // Track the Wifi connection
-    delay(500);                             // Delay by 500 ms
-    Serial.print(".");                      // Print “.”
+  // Connect to Wi-Fi
+  WiFi.begin(ssid, password);
+  Serial.println("Connecting to Wi-Fi...");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
   }
-  Serial.println("\nConnected to Wi-Fi");   //Print “Connected to Wi-Fi”
+  Serial.println("\nConnected to Wi-Fi");
 
-  pinMode(CLOCK, OUTPUT);      // Set the clock as output 
-  pinMode(LATCH, OUTPUT);      // Set the latch as output
-  pinMode(DATA, OUTPUT);       // Set the data as output  
+  // Set pin modes
+  pinMode(CLOCK, OUTPUT);
+  pinMode(LATCH, OUTPUT);
+  pinMode(DATA, OUTPUT);
   
-  pinMode(CHANGECITY, INPUT); // Set the changecity pin to input
-  pinMode(CHANGETEMP, INPUT); // Set the changetemp pin to input
+  pinMode(CHANGECITY, INPUT_PULLUP); // Button is active LOW
+  pinMode(CHANGETEMP, INPUT_PULLUP);
 
-  displayWeather();           // Display the first city's weather initially
+  // Display the first city's weather initially
+  displayWeather();
 }
 
 void loop() {
-  int reading = digitalRead(CHANGECITY); // Read the city change button state
-  if (reading != lastButtonState) { // Handle button debounce
-    lastDebounceTime = millis(); // Reset debounce timer
+  // Handle city change button
+  int readingCity = digitalRead(CHANGECITY);
+  if (readingCity != lastCityButtonState) {
+    lastDebounceTimeCity = millis(); // Reset debounce timer
   }
 
-  if ((millis() - lastDebounceTime) > debounceDelay) { // Create button debounce 
-    if (reading == LOW && lastButtonState == HIGH) { // Check for button press
+  if ((millis() - lastDebounceTimeCity) > debounceDelay) {
+    if (readingCity == LOW && lastCityButtonState == HIGH) {
       cityIndex = (cityIndex + 1) % 5; // Cycle through 5 cities
-      Serial.println("Button pressed! Switching city...");
-      displayWeather(); // Display weather for the current city
+      Serial.println("Switching city...");
+      displayWeather(); // Update the weather display
     }
   }
-  lastButtonState = reading; // Save the button state for the next loop iteration
-  int tempReading = digitalRead(CHANGETEMP); // Read the temperature toggle button state
-  if (tempReading != lastTempButtonState) {
-    lastDebounceTime = millis(); // Reset debounce timer for temperature button
+  lastCityButtonState = readingCity;
+
+  // Handle temperature toggle button
+  int readingTemp = digitalRead(CHANGETEMP);
+  if (readingTemp != lastTempButtonState) {
+    lastDebounceTimeTemp = millis(); // Reset debounce timer
   }
 
-  if ((millis() - lastDebounceTime) > debounceDelay) {
-    if (tempReading == LOW && lastTempButtonState == HIGH) { // Check for button press
-      int fahrenheitTemp = changeTemp(currentTemperature); // Convert to Fahrenheit
-      Serial.println("Temperature in Fahrenheit: " + String(fahrenheitTemp) + " °F");
+  if ((millis() - lastDebounceTimeTemp) > debounceDelay) {
+    if (readingTemp == LOW && lastTempButtonState == HIGH) {
+      int fahrenheitTemp = changeTemp(currentTemperature);
+      lcd.setCursor(0, 1);
+      lcd.print("Temp: ");
+      lcd.print(fahrenheitTemp);
+      lcd.print(" F  ");
     }
   }
-  lastTempButtonState = tempReading; // Save the temperature button state for the next loop iteration
+  lastTempButtonState = readingTemp;
 }
 
-void changeTemp(float tempCelsius) { // Function to convert Celsius to Fahrenheit
-  return (tempCelsius * 1.8) + 32;   // Converts Celsius to Fahrenheit
+int changeTemp(float tempCelsius) {
+  return (tempCelsius * 1.8) + 32;
 }
 
-void displayWeather() {            // Displays the weather 
-  currentCity = cities[cityIndex]; // Get the city name based on cityIndex
-  getWeatherData(currentCity); // Get weather data for the current city
-  lcd.clear();                // Clear the LCD
-  lcd.print("City: ");        // Print “City:”
-  lcd.setCursor(0,1);         // Set the cursor to (0,1)
-  lcd.print(currentCity);     // Print the current city
-  delay(2000);               // Wait before showing the temperature
-  displayTemperature(currentTemperature); // Display temperature on 7-segment display
+void displayWeather() {
+  currentCity = cities[cityIndex];
+  getWeatherData(currentCity);
+
+  lcd.clear();
+  lcd.print("City: ");
+  lcd.setCursor(0, 1);
+  lcd.print(currentCity);
+
+  delay(2000); // Display city name briefly
+  lcd.clear();
+  lcd.print("Temp: ");
+  lcd.print(currentTemperature);
+  lcd.print(" C");
+
+  displayTemperature(currentTemperature);
 }
 
-void getWeatherData(String city) {   // Get weather data 
-  HTTPClient http;                   // Create an http client 
-  String url = BASE_URL + "?key=" + API_KEY + "&q=" + city; // Create the string for the API
-  Serial.println("Requesting weather data for: " + city); // Print the city
-  http.begin(url);                  // Begin HTTP communication 
-  int httpResponseCode = http.GET();// Get an httpPresponseCode (1 is successful)
-  if (httpResponseCode > 0) { // When HTTP Response code is successful 
-    String payload = http.getString();// Get the required info for the specific city
-    Serial.println("Response received:"); // Print “Response received:
-    Serial.println(payload);              // Print the JSON formatted response 
-    parseWeatherData(payload);            // Parse the data for the ESP32
-  } 
-  http.end();                             // End HTTP communication
+void getWeatherData(String city) {
+  HTTPClient http;
+  String url = BASE_URL + "?key=" + API_KEY + "&q=" + city;
+
+  Serial.println("Requesting weather data for: " + city);
+  http.begin(url);
+  int httpResponseCode = http.GET();
+
+  if (httpResponseCode > 0) {
+    String payload = http.getString();
+    parseWeatherData(payload);
+  } else {
+    Serial.println("Error in HTTP request");
+  }
+
+  http.end();
 }
 
-void parseWeatherData(String payload) { // Parse the data for the city
-  DynamicJsonDocument doc(2048); // Create a document of 2048 bytes 
-  DeserializationError error = deserializeJson(doc, payload);  // Deserialize JSON response
-  currentTemperature = doc["current"]["temp_c"].as<float>(); // Extract temperature
-  Serial.println("City: " + currentCity);  // Print city to Serial Monitor  Serial.println("Temperature: " + String(currentTemperature) + " °C"); // Print temp
+void parseWeatherData(String payload) {
+  DynamicJsonDocument doc(2048);
+
+  DeserializationError error = deserializeJson(doc, payload);
+
+  if (error) {
+    Serial.println("Failed to parse JSON");
+    return;
+  }
+
+  currentTemperature = doc["current"]["temp_c"].as<float>();
+  Serial.println("City: " + currentCity);
+  Serial.println("Temperature: " + String(currentTemperature) + " °C");
 }
 
 void showTemp(int digit) {
-  byte value = 0; // Convert the digit's segment data into a byte
+  byte value = 0;
   for (int i = 0; i < 7; i++) {
-    value |= (digits[digit][i] << i); // Turn corresponding segments on for each digit
+    value |= (digits[digit][i] << i);
   }
-  digitalWrite(LATCH, LOW);                // Set the latch LOW
-  shiftOut(DATA, CLOCK, MSBFIRST, value);  // shiftOut to displays 
-  digitalWrite(LATCH, HIGH);               // Set the latch HIGH
+  
+  digitalWrite(LATCH, LOW);
+  shiftOut(DATA, CLOCK, MSBFIRST, value);
+  digitalWrite(LATCH, HIGH);
 }
 
-void displayTemperature(float temperature) {// display the temperature on displays
-  int absTemp = abs((int)temperature); // Handle negative temperatures
-  int tens = absTemp / 10;             // Extract the tens place
-  int units = absTemp % 10;            // Extract the units place
+void displayTemperature(float temperature) {
+  int absTemp = abs((int)temperature);
+  int tens = absTemp / 10;
+  int units = absTemp % 10;
 
-  showTemp(tens);  // Display tens digit
-  delay(1000);     // Wait a second
+  showTemp(tens);
+  delay(1000);
 
-  showTemp(units); // Display units digit
-  delay(1000);     // Wait a second 
+  showTemp(units);
+  delay(1000);
 }
-
