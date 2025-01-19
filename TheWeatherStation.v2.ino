@@ -109,10 +109,7 @@ void loop() {
   if ((millis() - lastDebounceTimeTemp) > debounceDelay) {
     if (readingTemp == LOW && lastTempButtonState == HIGH) {
       int fahrenheitTemp = changeTemp(currentTemperature);
-      lcd.setCursor(0, 1);
-      lcd.print("Temp: ");
-      lcd.print(fahrenheitTemp);
-      lcd.print(" F  ");
+      Serial.print(fahrenheitTemp);
     }
   }
   lastTempButtonState = readingTemp;
@@ -132,11 +129,6 @@ void displayWeather() {
   lcd.print(currentCity);
 
   delay(2000); // Display city name briefly
-  lcd.clear();
-  lcd.print("Temp: ");
-  lcd.print(currentTemperature);
-  lcd.print(" C");
-
   displayTemperature(currentTemperature);
 }
 
